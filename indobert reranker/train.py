@@ -73,22 +73,24 @@ def train_one_epoch(
         #   batch = (inputs, targets)
         # Adjust if your structurizer returns something else
         # ----------------------------------------------------
-        inputs, targets = batch
 
         optimizer.zero_grad()
 
         outputs = model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
-            vector_a=batch["vector_a"],
-            vector_b=batch["vector_b"]
+            document_vector=batch["document_vector"]
         )
 
-        loss = criterion(outputs, batch["labels"])
+        if "labels" in batch:
+            labels = batch["labels"].float()
+            loss = criterion(outputs, labels)
+        else:
+            continue
 
-        loss.backward()
-
-        optimizer.step()
+        if loss is not None:
+            loss.backward()
+            optimizer.step()
 
         running_loss += loss.item()
 
@@ -117,16 +119,17 @@ def validate(
     for batch in progress_bar:
         batch = move_to_device(batch, device)
 
-        inputs, targets = batch
-
         outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
-                vector_a=batch["vector_a"],
-                vector_b=batch["vector_b"],
+                document_vector=batch["document_vector"]
         )
 
-        loss = criterion(outputs, batch["labels"])
+        if "labels" in batch:
+            labels = batch["labels"].float()
+            loss = criterion(outputs, labels)
+        else:
+            continue
 
         running_loss += loss.item()
 
@@ -177,10 +180,8 @@ def main():
 
     # --------------------------------------------------------
     # Loss
-    #   Classification -> CrossEntropyLoss
-    #   Regression -> MSELoss
     # --------------------------------------------------------
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCEWithLogitsLoss()
 
     # --------------------------------------------------------
     # Optimizer
