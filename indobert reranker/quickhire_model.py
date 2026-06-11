@@ -26,12 +26,17 @@ class IndoBERTRanker(nn.Module):
         dropout (float): Dropout rate.
     """
 
+    def freeze_encoder(self):
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
     def __init__(
         self,
         model_name: str = "indobenchmark/indobert-base-p1",
         vector_dim: int = 128,
         hidden_dim: int = 256,
         dropout: float = 0.1,
+        freeze_bert=True
     ):
         super().__init__()
 
@@ -45,11 +50,11 @@ class IndoBERTRanker(nn.Module):
             nn.Linear(bert_hidden_size + vector_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, 1),
         )
+
+        if freeze_bert:
+            self.freeze_encoder()
 
     def forward(
         self,
