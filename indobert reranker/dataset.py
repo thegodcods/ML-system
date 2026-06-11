@@ -12,11 +12,21 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 
 
-class VectorPairDataset(Dataset):
+class RerankerDataset(Dataset):
     """
     Dataset untuk:
-    - perbandingan pasangan vektor
-    - label opsional
+    - perbandingan reranker
+
+    Input:
+    - query
+    - dokumen
+    - vector dokumen
+
+    output:
+    - input_ids
+    - attention_mask
+    - document_vector
+    - labels opsional
     """
 
     def __init__(
@@ -37,10 +47,12 @@ class VectorPairDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
 
-        text = sample["text"]
+        query = sample["query"]
+        document = sample["document"]
 
         encoded = self.tokenizer(
-            text,
+            query,
+            document,
             truncation=True,
             max_length=self.max_length,
             padding=False,  # dynamic padding in collate_fn
@@ -49,27 +61,29 @@ class VectorPairDataset(Dataset):
         )
 
         item = {
-            "input_ids": torch.tensor(encoded["input_ids"], dtype=torch.long),
-            "attention_mask": torch.tensor(encoded["attention_mask"], dtype=torch.long),
-            "vector_a": torch.tensor(sample["vector_a"], dtype=torch.float),
-            "vector_b": torch.tensor(sample["vector_b"], dtype=torch.float),
+            "input_ids": torch.tensor(encoded["input_ids"],
+                                      dtype=torch.long),
+            "attention_mask": torch.tensor(encoded["attention_mask"],
+                                           dtype=torch.long),
+            "document_vector": torch.tensor(sample["document_vector"],
+                                            dtype=torch.float),
         }
 
         if not self.inference and "label" in sample:
-            item["labels"] = torch.tensor(sample["label"], dtype=torch.long)
+            item["labels"] = torch.tensor(sample["label"],
+                                          dtype=torch.float)
 
         return item
 
 
-class VectorPairCollator:
+class RerankerCollator:
     """
     Dynamic batch padding collator.
 
     Returns:
     - input_ids
     - attention_mask
-    - vector_a
-    - vector_b
+    - document vector
     - labels (optional)
     """
 
@@ -89,14 +103,12 @@ class VectorPairCollator:
             return_tensors="pt",
         )
 
-        vector_a = torch.stack([x["vector_a"] for x in batch])
-        vector_b = torch.stack([x["vector_b"] for x in batch])
+        document_vector = torch.stack([x["document_vector"] for x in batch])
 
         output = {
             "input_ids": padded["input_ids"],
             "attention_mask": padded["attention_mask"],
-            "vector_a": vector_a,
-            "vector_b": vector_b,
+            "document_vector": document_vector
         }
 
         if "labels" in batch[0]:
@@ -118,14 +130,14 @@ def build_dataloader(
 ):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    dataset = VectorPairDataset(
+    dataset = RerankerDataset(
         samples=samples,
         tokenizer=tokenizer,
         max_length=max_length,
         inference=inference,
     )
 
-    collator = VectorPairCollator(tokenizer)
+    collator = RerankerCollator(tokenizer)
 
     loader = DataLoader(
         dataset,
@@ -147,11 +159,11 @@ pipeline:
 
 samples list
     ↓
-VectorPairDataset
+RerankerDataset
     ↓
 tokenization + tensor conversion
     ↓
-VectorPairCollator
+RerankerCollator
     ↓
 dynamic batch padding
     ↓
@@ -163,15 +175,15 @@ training loop
 """
 train_samples = [
     {
-        "text": "this is sample one",
-        "vector_a": [0.1, 0.2, 0.3],
-        "vector_b": [0.5, 0.7, 0.9],
+        "query": "cara membuat sambal",
+        "document": "Resep sambal terasi...",
+        "document_vector": [0.1] * 384,
         "label": 1,
     },
     {
-        "text": "another sample",
-        "vector_a": [0.3, 0.4, 0.1],
-        "vector_b": [0.8, 0.2, 0.6],
+        "query": "cara menyetrika uang",
+        "document": "setrika merek maspion",
+        "document_vector": [0.8] * 384,
         "label": 0,
     },
 ]
@@ -185,8 +197,7 @@ train_loader = build_dataloader(
 for batch in train_loader:
     print(batch["input_ids"].shape)
     print(batch["attention_mask"].shape)
-    print(batch["vector_a"].shape)
-    print(batch["vector_b"].shape)
+    print(batch["document_vector"].shape)
     print(batch["labels"].shape)
 """
 
