@@ -143,6 +143,60 @@ class TextStructurer:
     model-ready structured text.
     """
 
+    def resume_from_json(self, data: dict) -> str:
+
+        output = []
+
+        output.append("[RESUME]")
+
+        if data.get("summary"):
+            output.append(
+                f"SUMMARY:\n{data['summary']}"
+            )
+
+        skills = data.get("skills", {})
+
+        tech = skills.get("technical", {})
+
+        tech_names = []
+
+        for group in tech.values():
+            for item in group:
+                tech_names.append(item["name"])
+
+        if tech_names:
+            output.append(
+                "SKILLS:\n" +
+                ", ".join(tech_names)
+            )
+
+        for exp in data.get("experience", []):
+
+            output.append(
+                f"""
+            EXPERIENCE:
+            TITLE: {exp.get('title','')}
+            LEVEL: {exp.get('level','')}
+
+            RESPONSIBILITIES:
+            {" ".join(exp.get('responsibilities', []))}
+            """
+                )
+
+        for edu in data.get("education", []):
+
+            degree = edu.get("degree", {})
+
+            output.append(
+                f"""
+            EDUCATION:
+            {degree.get('level', '')}
+            {degree.get('field', '')}
+            """
+            )
+
+        return "\n\n".join(output)
+
     def _create_pseudo_lines(self, text):
 
         separators = [
