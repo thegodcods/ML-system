@@ -1,18 +1,11 @@
 # hello, ini untuk formatting jobdesc
 # dan mempertahankan pseudo structure pada CV
-# salah satu fungsi penting adalah pair assembly
-
-# dibawah ini harusnya ada sequence formatting policy
-
-# dibawah ini harusnya ada tensor validation
+# salah satu fungsi penting adalah record assembly
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-import torch
-import torch.nn.functional as F
-
 
 @dataclass
 class RerankerRecord:
@@ -142,6 +135,187 @@ class RerankerAssembler:
             return None
 
         return np.asarray(vector, dtype=self.vector_dtype)
+
+
+class TextStructurer:
+    """
+    Converts cleaned but unstructured CV / jobdesc into
+    model-ready structured text.
+    """
+
+    def _create_pseudo_lines(self, text):
+
+        separators = [
+            "work experience",
+            "professional experience",
+            "technical skills",
+            "skills",
+            "education",
+            "projects",
+            "about me",
+            "summary",
+            "contact"
+        ]
+
+        lowered = text.lower()
+
+        for sep in separators:
+            lowered = lowered.replace(
+                sep,
+                f"\n{sep}\n"
+            )
+
+        return [
+            t.strip()
+            for t in lowered.split("\n")
+            if t.strip()
+        ]
+
+    def structure_job(self, text: str):
+
+        lines = self._create_pseudo_lines(text)
+
+        return (
+            "[JOB]\n"
+            + "\n".join(lines[:80])
+        )
+
+    def structure_resume(self, text: str) -> str:
+        """
+        Convert messy CV into structured schema
+        """
+
+        sections = self._split_sections(text)
+
+        ordered = [
+            ("TITLE", sections.get("title", [])),
+            ("SUMMARY", sections.get("summary", [])),
+            ("SKILLS", sections.get("skills", [])),
+            ("EXPERIENCE", sections.get("experience", [])),
+            ("EDUCATION", sections.get("education", [])),
+        ]
+
+        formatted = "[RESUME]\n"
+        for k, v in ordered:
+            if v:
+                formatted += f"{k}:\n{self._join(k, v)}\n\n"
+        return formatted.strip()
+
+    def _extract_title(self, lines):
+        title_keywords = [
+            "engineer", "developer", "manager",
+            "analyst", "architect", "designer"
+        ]
+
+        title_parts = []
+
+        for line in lines[:6]:  # top region only
+            lowered = line.lower()
+            word_count = len(line.split())
+
+            if (any(k in lowered for k in title_keywords) and word_count < 4):
+                title_parts.append(line)
+
+        return "".join(title_parts)
+
+    def _split_sections(self, text: str):
+        """
+        state machine style heuristic section detection
+        backend already cleaned text → no regex cleanup needed
+        """
+
+        lines = self._create_pseudo_lines(text)
+        lines_lower = [l.lower() for l in lines]
+
+        sections = {
+            "title": [],
+            "summary": [],
+            "skills": [],
+            "experience": [],
+            "education": [],
+            "other": []
+        }
+
+        title = self._extract_title(lines)
+
+        if title:
+            sections["title"] = [title]
+
+        current = "other"
+
+        for original, line in zip(lines, lines_lower):
+
+            detected = self._detect_section(line)
+
+            if detected:
+                current = detected
+                continue
+
+            sections[current].append(original)
+
+        """print("=== SEGMENTS ===")
+        for k, v in sections.items():
+            print(k, ":", v[:2])"""
+
+        return sections
+
+    def _detect_section(self, line: str):
+
+        section_map = {
+            "summary": [
+                "about me",
+                "summary",
+                "profile",
+                "objective"
+            ],
+            "skills": [
+                "skills",
+                "technical skills",
+                "competencies"
+            ],
+            "experience": [
+                "experience",
+                "work experience",
+                "employment"
+            ],
+            "education": [
+                "education",
+                "academic"
+            ]
+        }
+
+        for section, keys in section_map.items():
+            for k in keys:
+                if k in line:
+                    return section
+
+        return None
+
+    def _truncate_words(
+            self,
+            text: str,
+            max_words: int
+    ):
+
+        words = text.split()
+
+        return " ".join(words[:max_words])
+
+    def _join(self, section_name, items):
+        SECTION_LIMITS = {
+            "TITLE": 20,
+            "SUMMARY": 80,
+            "SKILLS": 80,
+            "EXPERIENCE": 180,
+            "EDUCATION": 50
+        }
+
+        limit = SECTION_LIMITS.get(
+            section_name,
+            50
+        )
+
+        return self._truncate_words(" ".join(items), limit)
 
 # cth penggunaan
 
