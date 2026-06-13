@@ -79,7 +79,6 @@ def train_one_epoch(
         outputs = model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
-            document_vector=batch["document_vector"]
         )
 
         if "labels" in batch:
@@ -122,7 +121,6 @@ def validate(
         outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
-                document_vector=batch["document_vector"]
         )
 
         if "labels" in batch:
