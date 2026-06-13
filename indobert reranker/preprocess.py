@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+import json
 
 @dataclass
 class RerankerRecord:
@@ -19,13 +20,11 @@ class RerankerRecord:
             PairRecord(
             query="butuh developer front end",
             document="hasil parsing CV",
-            document_vector=np.array([0.1, 0.2]),,
             label=1,
         )
     """
     query: str
     document: str
-    document_vector: Optional[np.ndarray] = None
     label: Optional[Any] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -33,8 +32,7 @@ class RerankerRecord:
 class RerankerAssembler:
     """
     Flexible reranker assembler untuk:
-        - raw text
-        - vector embeddings
+        - raw text query dan dokumen
         - labels / metadata
 
     Main goals:
@@ -43,11 +41,7 @@ class RerankerAssembler:
         3. sample assembly
     """
     # mendefinisikan self sebagai internal storage
-    def __init__(self,
-                 vector_dim: Optional[int] = None,
-                 vector_dtype=np.float32):
-        self.vector_dim = vector_dim
-        self.vector_dtype = vector_dtype
+    def __init__(self):
         self.records: List[RerankerRecord] = []
 
     # layer tambah data
@@ -59,7 +53,6 @@ class RerankerAssembler:
         self,
         query: Optional[str] = None,
         document: Optional[str] = None,
-        document_vector: Optional[Sequence[float]] = None,
         label: Optional[Any] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> RerankerRecord:
@@ -72,24 +65,10 @@ class RerankerAssembler:
         if not document:
             raise ValueError("document kosong")
 
-        vector = self._to_vector(document_vector)
-
-        # baris 1: pemeriksaan kekosongan vector CV dan vector jobdesc
-        # baris 2: pemeriksaan kesamaan shape vector
-        # baris 2 tidak akan error selama model embedding CV
-        # dan embedding jobdesc sama
-        if vector is not None and self.vector_dim is not None:
-            if vector.shape[0] != self.vector_dim:
-                raise ValueError(
-                    f"vector dimension mismatch: "
-                    f"{vector.shape[0]} != {self.vector_dim}"
-                    )
-
     # menggunakan PairRecord untuk mapping function dalam memory ke
         record = RerankerRecord(
                 query=query,
                 document=document,
-                document_vector=document_vector,
                 label=label,
                 metadata=metadata or {},
             )
@@ -109,7 +88,6 @@ class RerankerAssembler:
             sample = {
                 "query": r.query,
                 "document": r.document,
-                "document_vector": r.document_vector,
             }
 
             if r.label is not None:
@@ -124,17 +102,6 @@ class RerankerAssembler:
 
     def __len__(self):
         return len(self.records)
-
-    # internal helper
-
-    def _to_vector(
-        self,
-        vector: Optional[Sequence[float]],
-    ) -> Optional[np.ndarray]:
-        if vector is None:
-            return None
-
-        return np.asarray(vector, dtype=self.vector_dtype)
 
 
 class TextStructurer:
@@ -175,8 +142,8 @@ class TextStructurer:
             output.append(
                 f"""
             EXPERIENCE:
-            TITLE: {exp.get('title','')}
-            LEVEL: {exp.get('level','')}
+            TITLE: {exp.get('title', '')}
+            LEVEL: {exp.get('level', '')}
 
             RESPONSIBILITIES:
             {" ".join(exp.get('responsibilities', []))}
@@ -196,6 +163,15 @@ class TextStructurer:
             )
 
         return "\n\n".join(output)
+
+    def load_jsonl(self, path):
+        samples = []
+
+        with open(path, "r", encoding="utf-8") as entry:
+            for line in entry:
+                item = json.loads(line)
+                samples.append(item)
+            return samples
 
     def _create_pseudo_lines(self, text):
 
@@ -254,6 +230,110 @@ class TextStructurer:
             if v:
                 formatted += f"{k}:\n{self._join(k, v)}\n\n"
         return formatted.strip()
+
+    def structure_resume_from_json(self, data: dict) -> str:
+        """
+        Converts structured resume JSON into unified training schema:
+        TITLE / SUMMARY / SKILLS / EXPERIENCE / EDUCATION
+        """
+
+        sections = []
+        sections.append("[RESUME]")
+
+        # --------------------------
+        # SUMMARY
+        # --------------------------
+        summary = data.get("summary", "")
+        if summary:
+            sections.append(f"SUMMARY:\n{summary}")
+
+        # --------------------------
+        # SKILLS
+        # --------------------------
+        skills = data.get("skills", {})
+        tech = skills.get("technical", {})
+
+        tech_names = []
+        for group in tech.values():
+            for item in group:
+                if isinstance(item, dict) and "name" in item:
+                    tech_names.append(item["name"])
+
+        if tech_names:
+            sections.append("SKILLS:\n" + ", ".join(tech_names))
+
+        # --------------------------
+        # TITLE (IMPORTANT FIX)
+        # --------------------------
+        title = None
+        experiences = data.get("experience", [])
+
+        # primary: first valid experience title
+        for exp in experiences:
+            if exp.get("title"):
+                title = exp["title"]
+                break
+
+        if title:
+            sections.insert(1, f"TITLE:\n{title}")
+
+        # --------------------------
+        # EXPERIENCE (clean structured)
+        # --------------------------
+        exp_blocks = []
+
+        for exp in experiences:
+            block = []
+
+            t = exp.get("title")
+            if t:
+                block.append(f"TITLE: {t}")
+
+            dates = exp.get("dates", {})
+            if isinstance(dates, dict):
+                start = dates.get("start")
+                end = dates.get("end")
+                if start or end:
+                    block.append(f"DATES: {start or ''} - {end or ''}")
+
+            if block:
+                exp_blocks.append("\n".join(block))
+
+        if exp_blocks:
+            sections.append("EXPERIENCE:\n" + "\n\n".join(exp_blocks))
+
+        # --------------------------
+        # EDUCATION
+        # --------------------------
+        edu_blocks = []
+
+        for edu in data.get("education", []):
+            degree = edu.get("degree", {})
+            institution = edu.get("institution", {})
+            dates = edu.get("dates", {})
+
+            parts = []
+
+            level = degree.get("level")
+            field = degree.get("field")
+            if level or field:
+                parts.append(" ".join([level or "", field or ""]).strip())
+
+            if institution.get("name"):
+                parts.append(institution["name"])
+
+            start = dates.get("start")
+            end = dates.get("expected_graduation") or dates.get("end")
+            if start or end:
+                parts.append(f"{start or ''}-{end or ''}")
+
+            if parts:
+                edu_blocks.append(" ".join(parts))
+
+        if edu_blocks:
+            sections.append("EDUCATION:\n" + "\n".join(edu_blocks))
+
+        return "\n\n".join(sections)
 
     def _extract_title(self, lines):
         title_keywords = [
@@ -373,63 +453,121 @@ class TextStructurer:
 
 # cth penggunaan
 
+
 '''
+# contoh penggunaan dalam training
+
 from dataset import build_dataloader
+from preprocess import TextStructurer
+from assembler import RerankerAssembler  # assuming split file
 
-assembler = RerankerAssembler(vector_dim=384)
+processor = TextStructurer()
+assembler = RerankerAssembler()
 
+# -------------------------
+# 1. JSON → structured document
+# -------------------------
+resume_json = {
+    "summary": "Backend engineer with Python experience",
+    "experience": [
+        {
+            "title": "Python Developer",
+            "level": "junior",
+            "company": "ABC Corp",
+            "responsibilities": ["API development", "DB optimization"],
+            "dates": {"start": "2021", "end": "2024"}
+        }
+    ],
+    "skills": {
+        "technical": {
+            "programming": [
+                {"name": "Python"},
+                {"name": "FastAPI"}
+            ]
+        }
+    },
+    "education": [
+        {
+            "degree": {"level": "BSc", "field": "Computer Science"},
+            "institution": {"name": "XYZ University"}
+        }
+    ]
+}
+
+document_text = processor.structure_resume_from_json(resume_json)
+
+# -------------------------
+# 2. Add training sample
+# -------------------------
 assembler.add_sample(
-    query="Looking for a Python backend engineer",
-    document="""
-    John Doe
-
-    Skills:
-    Python
-    FastAPI
-    PostgreSQL
-
-    Experience:
-    Backend Engineer 4 years
-    """,
-    document_vector=[0.1] * 384,
+    query="Looking for a Python backend engineer with API experience",
+    document=document_text,
+    label=1
 )
 
 assembler.add_sample(
-    query="Looking for a Python backend engineer",
-    document="""
-    Jane Smith
-
-    Skills:
-    Accounting
-    Tax
-    Finance
-
-    Experience:
-    Senior Accountant
-    """,
-    document_vector=[0.2] * 384,
+    query="Looking for a Python backend engineer with API experience",
+    document="Unrelated accountant with finance background",
+    label=0
 )
 
+# -------------------------
+# 3. Export dataset
+# -------------------------
 samples = assembler.to_samples()
 
-print(samples[0])
-print(len(assembler))
 print(samples[0].keys())
 
-for s in samples:
-    print(s["document_vector"] is None)
-
+# -------------------------
+# 4. DataLoader
+# -------------------------
 loader = build_dataloader(
     samples=samples,
     batch_size=2,
-    shuffle=False,
+    shuffle=True
 )
 
 for batch in loader:
-
     print(batch["input_ids"].shape)
     print(batch["attention_mask"].shape)
-    print(batch["document_vector"].shape)
 
     break
+    
+# contoh menggunakan text
+
+from preprocess import TextStructurer
+from dataset import RerankerAssembler
+import numpy as np
+
+# init
+structurer = TextStructurer()
+assembler = RerankerAssembler()
+
+# -------------------------
+# read raw text file
+# -------------------------
+with open("resume.txt", "r", encoding="utf-8") as f:
+    raw_text = f.read()
+
+# -------------------------
+# convert raw text → structured resume
+# -------------------------
+structured_resume = structurer.structure_resume(raw_text)
+
+# -------------------------
+# create training pair
+# -------------------------
+assembler.add_sample(
+    query="Looking for a marketing manager with product launch experience",
+    document=structured_resume,
+    label=1
+)
+
+# -------------------------
+# export dataset
+# -------------------------
+samples = assembler.to_samples()
+
+print(samples[0]["document"])
+print(samples[0].keys())
 '''
