@@ -187,6 +187,13 @@ def main():
                                   shuffle=False
                                   )
 
+    # sanity check
+    batch = next(iter(train_loader))
+
+    print("input_ids:", batch["input_ids"].shape)
+    print("attention_mask:", batch["attention_mask"].shape)
+    print("labels:", batch["labels"].shape)
+
     # --------------------------------------------------------
     # Model
     # --------------------------------------------------------
@@ -229,7 +236,7 @@ def main():
             device=device,
         )
 
-        val_loss = validate(
+        val_loss, spearman = validate(
             model=model,
             loader=val_loader,
             criterion=criterion,
@@ -241,6 +248,7 @@ def main():
         print(
             f"train_loss={train_loss:.4f} | "
             f"val_loss={val_loss:.4f} | "
+            f"spearman={spearman:.4f} | "
             f"time={elapsed:.2f}s"
         )
 
