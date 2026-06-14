@@ -1,15 +1,16 @@
 # hello, disini menampung class dataset yang mengembalikan tensors dalam struktur rapi untuk training
 # strukturisasi dataset
 
-# batch prep yang mengembalikan input ID, attention mask, vectors, labels
+# batch prep yang mengembalikan input ID, attention mask, labels
 
-# PyTorch Dataset + Batch Prep for Text + Vector Pair Comparison
+# PyTorch Dataset + Batch Prep for Text
 
 from typing import List, Dict, Optional
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
+from global_ml_sys_config import MAX_LEN
 
 
 class RerankerDataset(Dataset):
@@ -20,12 +21,10 @@ class RerankerDataset(Dataset):
     Input:
     - query
     - dokumen
-    - vector dokumen
 
     output:
     - input_ids
     - attention_mask
-    - document_vector
     - labels opsional
     """
 
@@ -33,7 +32,7 @@ class RerankerDataset(Dataset):
         self,
         samples: List[Dict],
         tokenizer,
-        max_length: int = 128,
+        max_length: int = 256,
         inference: bool = False,
     ):
         self.samples = samples
@@ -69,7 +68,7 @@ class RerankerDataset(Dataset):
 
         if not self.inference and "label" in sample:
             item["labels"] = torch.tensor(sample["label"],
-                                          dtype=torch.float)
+                                          dtype=torch.float).clamp(0, 1)
 
         return item
 
@@ -81,7 +80,6 @@ class RerankerCollator:
     Returns:
     - input_ids
     - attention_mask
-    - document vector
     - labels (optional)
     """
 
@@ -98,15 +96,12 @@ class RerankerCollator:
                 "attention_mask": attention_masks,
             },
             padding=True,
-            return_tensors="pt",
+            return_tensors="pt"
         )
-
-        document_vector = torch.stack([x["document_vector"] for x in batch])
 
         output = {
             "input_ids": padded["input_ids"],
-            "attention_mask": padded["attention_mask"],
-            "document_vector": document_vector
+            "attention_mask": padded["attention_mask"]
         }
 
         if "labels" in batch[0]:
@@ -120,7 +115,7 @@ class RerankerCollator:
 def build_dataloader(
     samples,
     model_name: str = "indobenchmark/indobert-base-p1",
-    batch_size: int = 8,
+    batch_size: int = 16,
     shuffle: bool = False,
     max_length: int = 256,
     inference: bool = False,
@@ -131,7 +126,7 @@ def build_dataloader(
     dataset = RerankerDataset(
         samples=samples,
         tokenizer=tokenizer,
-        max_length=max_length,
+        max_length=MAX_LEN,
         inference=inference,
     )
 
@@ -176,13 +171,11 @@ train_samples = [
     {
         "query": "cara membuat sambal",
         "document": "Resep sambal terasi...",
-        "document_vector": [0.1] * 384,
         "label": 1,
     },
     {
         "query": "cara menyetrika uang",
         "document": "setrika merek maspion",
-        "document_vector": [0.8] * 384,
         "label": 0,
     },
 ]
@@ -196,7 +189,6 @@ train_loader = build_dataloader(
 for batch in train_loader:
     print(batch["input_ids"].shape)
     print(batch["attention_mask"].shape)
-    print(batch["document_vector"].shape)
     print(batch["labels"].shape)
 """
 
@@ -206,8 +198,6 @@ for batch in train_loader:
 infer_samples = [
     {
         "text": "new unseen example",
-        "vector_a": [0.4, 0.1, 0.7],
-        "vector_b": [0.2, 0.9, 0.5],
     }
 ]
 
