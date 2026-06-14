@@ -68,9 +68,6 @@ def rerank(query: str, candidates: list[str]):
 
     enc = {k: v.to(DEVICE) for k, v in enc.items()}
 
-    # external features
-    extra_vectors = build_extra_vectors(query, candidates).to(DEVICE)
-
     # memanggil torch tanpa menggunakan autograd untuk prediksi
     # autograd hanya khusus training
     # menggunakan model dalam variabel scores
@@ -78,7 +75,6 @@ def rerank(query: str, candidates: list[str]):
         scores = model(
             input_ids=enc["input_ids"],
             attention_mask=enc["attention_mask"],
-            vectors=extra_vectors
         )
 
     scores = scores.cpu().tolist()
