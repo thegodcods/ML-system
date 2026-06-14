@@ -212,24 +212,50 @@ class TextStructurer:
 
     def structure_resume(self, text: str) -> str:
         """
-        Convert messy CV into structured schema
+        Convert messy CV into SAME schema as structure_resume_from_json
         """
 
         sections = self._split_sections(text)
 
-        ordered = [
-            ("TITLE", sections.get("title", [])),
-            ("SUMMARY", sections.get("summary", [])),
-            ("SKILLS", sections.get("skills", [])),
-            ("EXPERIENCE", sections.get("experience", [])),
-            ("EDUCATION", sections.get("education", [])),
-        ]
+        output = []
+        output.append("[RESUME]")
 
-        formatted = "[RESUME]\n"
-        for k, v in ordered:
-            if v:
-                formatted += f"{k}:\n{self._join(k, v)}\n\n"
-        return formatted.strip()
+        # --------------------------
+        # TITLE (same logic as JSON version)
+        # --------------------------
+        title = sections.get("title", [])
+        if title:
+            output.append(f"TITLE:\n{self._join('TITLE', title)}")
+
+        # --------------------------
+        # SUMMARY (new: keep consistent even if heuristic)
+        # --------------------------
+        summary = sections.get("summary", [])
+        if summary:
+            output.append(f"SUMMARY:\n{self._join('SUMMARY', summary)}")
+
+        # --------------------------
+        # SKILLS (match JSON behavior)
+        # --------------------------
+        skills = sections.get("skills", [])
+        if skills:
+            output.append(f"SKILLS:\n{self._join('SKILLS', skills)}")
+
+        # --------------------------
+        # EXPERIENCE (structured blocks like JSON version)
+        # --------------------------
+        exp_lines = sections.get("experience", [])
+        if exp_lines:
+            output.append("EXPERIENCE:\n" + self._join("EXPERIENCE", exp_lines))
+
+        # --------------------------
+        # EDUCATION
+        # --------------------------
+        edu_lines = sections.get("education", [])
+        if edu_lines:
+            output.append("EDUCATION:\n" + self._join("EDUCATION", edu_lines))
+
+        return "\n\n".join(output).strip()
 
     def structure_resume_from_json(self, data: dict) -> str:
         """
@@ -334,6 +360,40 @@ class TextStructurer:
             sections.append("EDUCATION:\n" + "\n".join(edu_blocks))
 
         return "\n\n".join(sections)
+
+    def create_resume_match_score(job, resume):
+
+        score = 0
+
+        job_words = set(job.lower().split())
+
+        title = resume.get("TITLE", "")
+        skills = resume.get("SKILLS", "")
+        experience = resume.get("EXPERIENCE", "")
+
+        title_words = set(title.lower().split())
+        skill_words = set(skills.lower().split())
+        exp_words = set(experience.lower().split())
+
+        # title is strongest signal
+        score += (
+            len(job_words & title_words)
+            / max(len(job_words), 1)
+        ) * 0.4
+
+        # skills
+        score += (
+            len(job_words & skill_words)
+            / max(len(job_words), 1)
+        ) * 0.4
+
+        # experience
+        score += (
+            len(job_words & exp_words)
+            / max(len(job_words), 1)
+        ) * 0.2
+
+        return min(score, 1.0)
 
     def _extract_title(self, lines):
         title_keywords = [
@@ -532,7 +592,7 @@ for batch in loader:
     print(batch["attention_mask"].shape)
 
     break
-    
+
 # contoh menggunakan text
 
 from preprocess import TextStructurer
