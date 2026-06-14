@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel
 
 
 class IndoBERTRanker(nn.Module):
@@ -12,8 +12,6 @@ class IndoBERTRanker(nn.Module):
     IndoBERT
         ↓
     CLS token
-        +
-    Extra vectors
         ↓
        MLP
         ↓
@@ -21,7 +19,6 @@ class IndoBERTRanker(nn.Module):
 
     Args:
         model_name (str): Hugging Face IndoBERT model name.
-        vector_dim (int): Dimension of additional vectors.
         hidden_dim (int): Hidden size for MLP.
         dropout (float): Dropout rate.
     """
@@ -33,7 +30,6 @@ class IndoBERTRanker(nn.Module):
     def __init__(
         self,
         model_name: str = "indobenchmark/indobert-base-p1",
-        vector_dim: int = 128,
         hidden_dim: int = 256,
         dropout: float = 0.1,
         freeze_bert=True
@@ -47,10 +43,10 @@ class IndoBERTRanker(nn.Module):
 
         # MLP scorer
         self.mlp = nn.Sequential(
-            nn.Linear(bert_hidden_size + vector_dim, hidden_dim),
+            nn.Linear(bert_hidden_size, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
+            nn.Linear(hidden_dim, 1),
         )
 
         if freeze_bert:
@@ -59,15 +55,12 @@ class IndoBERTRanker(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        vectors: torch.Tensor,
+        attention_mask: torch.Tensor
     ):
         """
         Args:
             input_ids: Tensor of shape (batch_size, seq_len)
             attention_mask: Tensor of shape (batch_size, seq_len)
-            vectors: Additional feature vectors
-                     Shape: (batch_size, vector_dim)
 
         Returns:
             score: Ranking score tensor of shape (batch_size,)
@@ -82,11 +75,8 @@ class IndoBERTRanker(nn.Module):
         # CLS token representation
         cls_embedding = outputs.last_hidden_state[:, 0, :]
 
-        # Concatenate CLS + external vectors
-        combined = torch.cat([cls_embedding, vectors], dim=-1)
-
         # Predict ranking score
-        score = self.mlp(combined).squeeze(-1)
+        score = self.mlp(cls_embedding).squeeze(-1)
 
         return score
 
@@ -101,7 +91,6 @@ if __name__ == "__main__":
 
     model = IndoBERTRanker(
         model_name=MODEL_NAME,
-        vector_dim=128,
         hidden_dim=256,
     )
 
@@ -117,13 +106,9 @@ if __name__ == "__main__":
         return_tensors="pt",
     )
 
-    # Example external vectors
-    extra_vectors = torch.randn(len(texts), 128)
-
     scores = model(
         input_ids=encoding["input_ids"],
         attention_mask=encoding["attention_mask"],
-        vectors=extra_vectors,
     )
 
     print("Scores:")
