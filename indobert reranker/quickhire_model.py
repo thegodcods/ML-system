@@ -37,7 +37,10 @@ class IndoBERTRanker(nn.Module):
         super().__init__()
 
         # Load IndoBERT encoder
-        self.encoder = AutoModel.from_pretrained(model_name)
+        self.encoder = AutoModel.from_pretrained(
+            model_name,
+            use_safetensors=True
+            )
 
         bert_hidden_size = self.encoder.config.hidden_size
 
