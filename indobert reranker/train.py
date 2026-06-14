@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from tqdm import tqdm
+from scipy.stats import spearmanr
 
 # External dependencies
 
@@ -84,7 +85,7 @@ def train_one_epoch(
 
         outputs = model(
             input_ids=batch["input_ids"],
-            attention_mask=batch["attention_mask"],
+            attention_mask=batch["attention_mask"]
         )
 
         if "labels" in batch:
@@ -119,6 +120,9 @@ def validate(
 
     running_loss = 0.0
 
+    all_preds = []
+    all_labels = []
+
     progress_bar = tqdm(loader, desc="Validation", leave=False)
 
     for batch in progress_bar:
@@ -126,20 +130,25 @@ def validate(
 
         outputs = model(
                 input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
+                attention_mask=batch["attention_mask"]
         )
+
+        preds = outputs
 
         if "labels" in batch:
             labels = batch["labels"].float()
             loss = criterion(outputs, labels)
+            running_loss += loss.item()
+
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
         else:
             continue
 
-        running_loss += loss.item()
-
     epoch_loss = running_loss / len(loader)
+    spearman, _ = spearmanr(all_preds, all_labels) if all_labels else (0.0, 0.0)
 
-    return epoch_loss
+    return epoch_loss, spearman
 
 
 # Main Training Function
