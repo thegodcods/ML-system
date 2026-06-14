@@ -5,7 +5,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import numpy as np
 import json
 
 @dataclass
@@ -361,7 +360,7 @@ class TextStructurer:
 
         return "\n\n".join(sections)
 
-    def create_resume_match_score(job, resume):
+    def create_resume_match_score(self, job, resume):
 
         score = 0
 
@@ -379,7 +378,7 @@ class TextStructurer:
         score += (
             len(job_words & title_words)
             / max(len(job_words), 1)
-        ) * 0.4
+        ) * 0.2
 
         # skills
         score += (
