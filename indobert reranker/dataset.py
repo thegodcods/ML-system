@@ -64,9 +64,7 @@ class RerankerDataset(Dataset):
             "input_ids": torch.tensor(encoded["input_ids"],
                                       dtype=torch.long),
             "attention_mask": torch.tensor(encoded["attention_mask"],
-                                           dtype=torch.long),
-            "document_vector": torch.tensor(sample["document_vector"],
-                                            dtype=torch.float),
+                                           dtype=torch.long)
         }
 
         if not self.inference and "label" in sample:
@@ -153,6 +151,7 @@ def build_dataloader(
 # Example Usage
 
 # Training
+
 
 """
 pipeline:
