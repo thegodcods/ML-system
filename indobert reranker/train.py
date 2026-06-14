@@ -1,5 +1,5 @@
 # hello, disini untuk training loop
-
+import json
 from pathlib import Path
 import time
 import torch
@@ -9,11 +9,17 @@ from tqdm import tqdm
 
 # External dependencies
 
-import global_ml_sys_config
+from global_ml_sys_config import LR, MODEL_NAME, BATCH_SIZE, DEVICE, EPOCHS, CHECKPOINT_DIR, WEIGHT_DECAY
 from quickhire_model import IndoBERTRanker
 from dataset import build_dataloader
 
 # Utilities
+
+train_seed = 42
+
+torch.manual_seed(train_seed)
+torch.cuda.manual_seed(train_seed)
+torch.cuda.manual_seed_all(train_seed)
 
 
 def save_checkpoint(
@@ -85,7 +91,7 @@ def train_one_epoch(
             labels = batch["labels"].float()
             loss = criterion(outputs, labels)
         else:
-            continue
+            assert "labels" in batch
 
         if loss is not None:
             loss.backward()
@@ -142,7 +148,7 @@ def validate(
 def main():
 
     device = torch.device(
-        global_ml_sys_config.DEVICE if torch.cuda.is_available() else "cpu"
+        DEVICE if torch.cuda.is_available() else "cpu"
     )
 
     print(f"Using device: {device}")
@@ -151,7 +157,8 @@ def main():
     # Data
     # --------------------------------------------------------
     # loading
-    complete_data = None
+    with open("train_dataset.jsonl", "r", encoding="utf-8") as f:
+        complete_data = [json.loads(line) for line in f]
 
     # splitter
     split_idx = int(len(complete_data) * 0.8)
@@ -161,13 +168,13 @@ def main():
 
     # loader
     train_loader = build_dataloader(train_samples,
-                                    model_name=global_ml_sys_config.MODEL_NAME,
-                                    batch_size=global_ml_sys_config.BATCH_SIZE,
+                                    model_name=MODEL_NAME,
+                                    batch_size=BATCH_SIZE,
                                     shuffle=True
                                     )
     val_loader = build_dataloader(val_samples,
-                                  model_name=global_ml_sys_config.MODEL_NAME,
-                                  batch_size=global_ml_sys_config.BATCH_SIZE,
+                                  model_name=MODEL_NAME,
+                                  batch_size=BATCH_SIZE,
                                   shuffle=False
                                   )
 
@@ -179,31 +186,31 @@ def main():
     # --------------------------------------------------------
     # Loss
     # --------------------------------------------------------
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.MSELoss()
 
     # --------------------------------------------------------
     # Optimizer
     # --------------------------------------------------------
     optimizer = AdamW(
         model.parameters(),
-        lr=global_ml_sys_config.LR,
-        weight_decay=global_ml_sys_config.WEIGHT_DECAY,
+        lr=LR,
+        weight_decay=WEIGHT_DECAY,
     )
 
     # --------------------------------------------------------
     # Checkpoint setup
     # --------------------------------------------------------
-    checkpoint_dir = Path(global_ml_sys_config.CHECKPOINT_DIR)
+    checkpoint_dir = Path(CHECKPOINT_DIR)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
 
     # Training Loop
 
-    for epoch in range(global_ml_sys_config.EPOCHS):
+    for epoch in range(EPOCHS):
         start_time = time.time()
 
-        print(f"\nEpoch [{epoch + 1}/{global_ml_sys_config.EPOCHS}]")
+        print(f"\nEpoch [{epoch + 1}/{EPOCHS}]")
 
         train_loss = train_one_epoch(
             model=model,
