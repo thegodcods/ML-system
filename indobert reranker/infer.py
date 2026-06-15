@@ -4,14 +4,16 @@ import torch
 from quickhire_model import IndoBERTRanker
 from transformers import AutoTokenizer
 from global_ml_sys_config import MODEL_NAME, DEVICE
+from preprocess import TextStructurer
+
+structurer = TextStructurer()
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 # define model di awal
 model = IndoBERTRanker(
     model_name=MODEL_NAME,
-    vector_dim=128,
-    hidden_dim=256,
+    hidden_dim=256
 )
 
 # disini melakukan load model weights dalam format .pt
@@ -33,27 +35,14 @@ def retrieve(query: str, candidates: list[str], top_k: int = 10):
     return candidates[:top_k]
 
 
-def build_extra_vectors(query: str, docs: list[str]) -> torch.Tensor:
-    """
-    Placeholder for external text embeddings / features.
-
-    In real systems, this could be:
-    - SentenceTransformer embeddings
-    - TF-IDF features
-    - metadata features
-    - click signals
-    """
-    # mengembalikan vector sebanyak len(docs) dan 128 atau lebih fitur
-    return torch.randn(len(docs), 128)
-
-
 # RERANKING STAGE
-
-
 def rerank(query: str, candidates: list[str]):
     """
     reranking Cross Encoder berbasis Indobert dan Perceptron sederhana
     """
+
+    candidates = [structurer.structure_resume(doc)
+                  for doc in candidates]
 
     # membuat pair dokumen dan kandidat
     queries = [query] * len(candidates)
